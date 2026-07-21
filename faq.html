@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile App Shell</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="loader.js"></script>
+</head>
+<body onload="load()">
+
+    <!-- Main Device Wrapper to restrict width on desktop views -->
+    <div class="app-container">
+        
+        <!-- Fixed App Header -->
+        <header class="app-header">
+  
+            <h1 class="app-title">FAQs</h1>
+
+        </header>
+
+        <!-- Main Scrollable Feed Box -->
+        <main class="app-content">
+            
+            <div class="welcome-banner">
+                <h2>FAQs</h2>
+                <p>Frequently Asked Questions.</p>
+            </div>
+
+            <!-- UI Action Cards -->
+            <div class="faqs">
+                <div class="question">
+                <h3>Where is the charger location data sourced from?</h3>
+                <p>The charger locations are sourced from OpenCharge</p>
+                </div>
+                <div class="question">
+                <h3>Is ChargeRate Free?</h3>
+                <p>ChargeRate is free <strong>for usage</strong></p>
+                </div>
+                <div class="question">
+                <h3>Does chargerate collect any data?</h3>
+                <p>ChargeRate does not collect any of your data, execpt submitted reviews.</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Fixed Bottom Navigation Bar -->
+        <nav class="app-nav" id="nav-dummy">
+        </nav>
+
+    </div>
+
+</body>
+</html>

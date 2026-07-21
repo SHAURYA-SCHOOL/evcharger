@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile App Shell - ChargeRate</title>
+    
+    <!-- Leaflet Map CSS Stylesheet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css">
+    <script src="loader.js"></script>
+
+    <style>
+        #map {
+            width: 100%;
+            height: 450px;
+            border-radius: 12px;
+            margin: 15px 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 1; 
+        }
+
+        .popup-box { 
+            min-width: 220px; 
+            font-family: sans-serif;
+        }
+        .popup-box h3 { 
+            margin: 0 0 8px 0; 
+            font-size: 16px; 
+            color: #333; 
+        }
+        .popup-box p {
+            margin: 4px 0;
+            font-size: 13px;
+        }
+        .popup-box textarea { 
+            width: 100%; 
+            height: 55px; 
+            margin: 6px 0; 
+            box-sizing: border-box; 
+            padding: 4px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: none;
+        }
+        .popup-box button { 
+            width: 100%; 
+            padding: 8px; 
+            margin-top: 4px; 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .btn-save { background: #28a745; color: white; }
+        .btn-update { background: #007bff; color: white; }
+        
+        .rating-zone { 
+            margin-top: 10px; 
+            padding-top: 8px; 
+            border-top: 1px dashed #ccc; 
+        }
+        .stars-select {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+        }
+        .stars-select span { 
+            cursor: pointer; 
+            font-size: 14px; 
+            padding: 4px 8px;
+            background: #f1f1f1;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            transition: background 0.2s;
+        }
+        .stars-select span:hover {
+            background: #ffc107;
+            color: white;
+            border-color: #ffc107;
+        }
+    </style>
+</head>
+<body onload="load(); initMap();">
+
+    <div class="app-container">
+        
+        <header class="app-header">
+            <h1 class="app-title">MAP</h1>
+        </header>
+
+        <main class="app-content">
+            
+            <div class="welcome-banner">
+                <h2>ChargeRate Demo Map</h2>
+                <p>Tap anywhere to pin a new charger. Data persists locally on your device.</p>
+            </div>
+
+            <div id="map"></div>
+
+            <div class="faqs">
+                <div class="question">
+                    <h3>ChargeRate Community Map (App Features)</h3>
+                    <p>Simulated crowd-sourcing, live average star ratings, and instant edits.</p>
+                </div>
+                <div class="question">
+                    <h3>Local Sandbox Active</h3>
+                    <p>All chargers, edits, and ratings are stored in LocalStorage.</p>
+                </div>
+            </div>
+
+        </main>
+
+        <nav class="app-nav" id="nav-dummy"></nav>
+
+    </div>
+
+    <!-- Leaflet Engine Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map;
+
+        // Initial mock seed data so the map doesn't look empty on first launch
+        const defaultChargers = [
+            {
+                id: 1,
+                name: "Hub 1 - Fast Charger",
+                description: "CCS2 150kW. Available 24/7 next to the coffee shop.",
+                latitude: 40.7128,
+                longitude: -74.0060,
+                ratings: [5, 4, 5]
+            },
+            {
+                id: 2,
+                name: "Downtown Charging Hub",
+                description: "Type 2 AC Charger. Park free while charging.",
+                latitude: 40.7200,
+                longitude: -74.0100,
+                ratings: [3, 4]
+            }
+        ];
+
+        // Retrieve saved state from device memory, or seed with default mock data
+        function getLocalData() {
+            const data = localStorage.getItem('chargerate_chargers');
+            if (!data) {
+                localStorage.setItem('chargerate_chargers', JSON.stringify(defaultChargers));
+                return defaultChargers;
+            }
+            return JSON.parse(data);
+        }
+
+        function saveLocalData(chargers) {
+            localStorage.setItem('chargerate_chargers', JSON.stringify(chargers));
+        }
+
+        function initMap() {
+            if (document.getElementById('map')) {
+                map = L.map('map').setView([40.7128, -74.0060], 12);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+
+                loadMarkers();
+
+                // Pin drop event
+                map.on('click', function(e) {
+                    const { lat, lng } = e.latlng;
+                    const creationHtml = `
+                        <div class="popup-box">
+                            <h3>Add Community Charger</h3>
+                            <input type="text" id="new-name" placeholder="Station Name" style="width:100%; margin-bottom:5px; padding:4px; box-sizing:border-box;">
+                            <textarea id="new-desc" placeholder="Add details..."></textarea>
+                            <button class="btn-save" onclick="saveNewCharger(${lat}, ${lng})">Publish Location</button>
+                        </div>
+                    `;
+                    L.popup().setLatLng([lat, lng]).setContent(creationHtml).openOn(map);
+                });
+
+                setTimeout(() => { map.invalidateSize(); }, 200);
+            }
+        }
+
+        function loadMarkers() {
+            // Clear existing markers
+            map.eachLayer((layer) => { if (layer instanceof L.Marker) map.removeLayer(layer); });
+
+            const chargers = getLocalData();
+
+            chargers.forEach(charger => {
+                // Compute average star rating locally
+                const totalVotes = charger.ratings ? charger.ratings.length : 0;
+                let avg = "No ratings yet";
+                
+                if (totalVotes > 0) {
+                    const sum = charger.ratings.reduce((a, b) => a + b, 0);
+                    avg = (sum / totalVotes).toFixed(1) + " ⭐";
+                }
+
+                const infoHtml = `
+                    <div class="popup-box">
+                        <h3>${charger.name}</h3>
+                        <p><b>Rating:</b> ${avg} (${totalVotes} votes)</p>
+                        <label style="font-size:12px; font-weight:bold;">Description:</label>
+                        <textarea id="edit-desc-${charger.id}">${charger.description || ''}</textarea>
+                        <button class="btn-update" onclick="updateDescription(${charger.id})">Update Details</button>
+                        
+                        <div class="rating-zone">
+                            <label style="font-size:12px; font-weight:bold;">Submit Rating:</label>
+                            <div class="stars-select">
+                                <span onclick="submitRating(${charger.id}, 1)">1★</span>
+                                <span onclick="submitRating(${charger.id}, 2)">2★</span>
+                                <span onclick="submitRating(${charger.id}, 3)">3★</span>
+                                <span onclick="submitRating(${charger.id}, 4)">4★</span>
+                                <span onclick="submitRating(${charger.id}, 5)">5★</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                L.marker([charger.latitude, charger.longitude]).addTo(map).bindPopup(infoHtml);
+            });
+        }
+
+        function saveNewCharger(lat, lng) {
+            const name = document.getElementById('new-name').value;
+            const description = document.getElementById('new-desc').value;
+            if(!name) return alert('Station Title required');
+
+            const chargers = getLocalData();
+            const newCharger = {
+                id: Date.now(), // Generate a unique timestamp ID
+                name: name,
+                description: description,
+                latitude: lat,
+                longitude: lng,
+                ratings: []
+            };
+
+            chargers.push(newCharger);
+            saveLocalData(chargers);
+
+            map.closePopup();
+            loadMarkers();
+        }
+
+        function updateDescription(id) {
+            const newDescription = document.getElementById(`edit-desc-${id}`).value;
+            const chargers = getLocalData();
+            
+            const charger = chargers.find(c => c.id === id);
+            if (charger) {
+                charger.description = newDescription;
+                saveLocalData(chargers);
+                alert('Details updated!');
+                loadMarkers();
+            }
+        }
+
+        function submitRating(chargerId, ratingValue) {
+            const chargers = getLocalData();
+            
+            const charger = chargers.find(c => c.id === chargerId);
+            if (charger) {
+                if (!charger.ratings) charger.ratings = [];
+                charger.ratings.push(ratingValue);
+                saveLocalData(chargers);
+                alert('Rating logged!');
+                loadMarkers();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -3,6 +3,7 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    
     -webkit-tap-highlight-color: transparent;
 }
 
@@ -120,6 +121,37 @@ body {
     color: #ffffff;
     font-weight: 700;
 }
+.napp-card {
+    background-color: #373737;
+    border: 1px solid #aba9a9;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    filter: grayscale(100%) blur(0.6px);
+}
+
+.napp-card:hover {
+   animation: blur1 0.5s forwards ease-in-out;
+}
+@keyframes blur1 {
+    0% {filter: grayscale(100%) blur(0.6px);}
+    50% {filter: grayscale(100%) blur(5px);}
+    100% {filter: grayscale(100%) blur(0.6px);}
+}
+.napp-card h3 {
+    font-size: 14px;
+    color: #9d9c9c;
+    font-weight: 500;
+}
+
+.napp-card p {
+    font-size: 16px;
+    color: #414141;
+    font-weight: 700;
+}
+
 
 /* Sticky Bottom Navigation Bar Layout */
 .app-nav {
@@ -156,4 +188,15 @@ body {
 .nav-label {
     font-size: 11px;
     font-weight: 500;
+}
+.report {
+    color: red;
+    transition: all ease-in-out 0.25s;
+    cursor: pointer;
+    text-align: right;
+    font-size: 120%;
+}
+.report:hover {
+    font-size: 150%;
+    color: white;
 }

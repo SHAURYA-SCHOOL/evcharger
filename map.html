@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="config.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mobile App Shell - ChargeRate</title>
     
-    <!-- Leaflet Map CSS Stylesheet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/style.css">
     <script src="loader.js"></script>
@@ -13,11 +13,24 @@
     <style>
         #map {
             width: 100%;
-            height: 450px;
+            height: 480px;
             border-radius: 12px;
-            margin: 15px 0;
+            margin: 10px 0;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             z-index: 1; 
+        }
+
+        .status-bar {
+            font-size: 12px;
+            color: #333;
+            background: #eef2f5;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #dce3e8;
         }
 
         .popup-box { 
@@ -26,7 +39,7 @@
         }
         .popup-box h3 { 
             margin: 0 0 8px 0; 
-            font-size: 16px; 
+            font-size: 15px; 
             color: #333; 
         }
         .popup-box p {
@@ -80,9 +93,25 @@
             color: white;
             border-color: #ffc107;
         }
+        .badge-ocm {
+            font-size: 10px;
+            background: #007bff;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 5px;
+        }
+        .badge-custom {
+            font-size: 10px;
+            background: #28a745;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 5px;
+        }
     </style>
 </head>
-<body onload="load(); initMap();">
+<body onload="initMap();">
 
     <div class="app-container">
         
@@ -93,12 +122,16 @@
         <main class="app-content">
             
             <div class="welcome-banner">
-                <h2>ChargeRate LIVE Map</h2>
-                <p>Tap anywhere to pin a new charger. </p>
+                <h2>ChargeRate India Live Map</h2>
+                <p>Tap anywhere to pin a new charger or explore national stations.</p>
+            </div>
+
+            <div class="status-bar" id="status-bar">
+                <span id="status-text">🌐 Ready. Move map to query EV chargers.</span>
             </div>
 
             <div id="map"></div>
-        <p class="report" onclick="window.open(`mailto:shaurya.chauhan@ais.amity.edu.in`)">🚩 Report Misuse</p>
+            <p class="report" onclick="window.open(`mailto:shaurya.chauhan@ais.amity.edu.in`)">🚩 Report Misuse</p>
 
         </main>
 
@@ -109,53 +142,57 @@
     <!-- Leaflet Engine Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // Replace with your free OpenChargeMap API key
+        const OCM_API_KEY = CONFIG.OCM_API_KEY;
+
         let map;
+        let markersGroup;
+        let fetchTimeout;
+        const ocmStationsStore = new Map();
 
-        // Initial mock seed data so the map doesn't look empty on first launch
-        const defaultChargers = [
-            {
-                id: 1,
-                name: "Demo Charger",
-                description: "Demo Charger to show APP Interface",
-                latitude: 28.6652,
-                longitude: 77.3753,
-                ratings: [5, 4, 5]
-            },
-            {
-                id: 2,
-                name: "Demo 2",
-                description: "Demo 2",
-                latitude: 40.7200,
-                longitude: -74.0100,
-                ratings: [3, 4]
-            }
-        ];
-
-        // Retrieve saved state from device memory, or seed with default mock data
-        function getLocalData() {
-            const data = localStorage.getItem('chargerate_chargers');
-            if (!data) {
-                localStorage.setItem('chargerate_chargers', JSON.stringify(defaultChargers));
-                return defaultChargers;
-            }
-            return JSON.parse(data);
+        function getCustomData() {
+            const data = localStorage.getItem('chargerate_custom_chargers');
+            return data ? JSON.parse(data) : [];
         }
 
-        function saveLocalData(chargers) {
-            localStorage.setItem('chargerate_chargers', JSON.stringify(chargers));
+        function saveCustomData(chargers) {
+            localStorage.setItem('chargerate_custom_chargers', JSON.stringify(chargers));
+        }
+
+        function getRatingsData() {
+            const data = localStorage.getItem('chargerate_ratings');
+            return data ? JSON.parse(data) : {};
+        }
+
+        function saveRatingsData(ratings) {
+            localStorage.setItem('chargerate_ratings', JSON.stringify(ratings));
+        }
+
+        function updateStatus(message) {
+            const el = document.getElementById('status-text');
+            if (el) el.innerText = message;
         }
 
         function initMap() {
             if (document.getElementById('map')) {
-                map = L.map('map').setView([28, 77], 12);
+                map = L.map('map').setView([28.6500, 77.3500], 11);
 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap'
+                    attribution: '© OpenStreetMap contributors'
                 }).addTo(map);
 
-                loadMarkers();
+                markersGroup = L.layerGroup().addTo(map);
 
-                // Pin drop event
+                renderAllMarkers();
+                fetchOpenChargeMapData();
+
+                map.on('moveend', () => {
+                    clearTimeout(fetchTimeout);
+                    fetchTimeout = setTimeout(() => {
+                        fetchOpenChargeMapData();
+                    }, 500);
+                });
+
                 map.on('click', function(e) {
                     const { lat, lng } = e.latlng;
                     const creationHtml = `
@@ -173,92 +210,138 @@
             }
         }
 
-        function loadMarkers() {
-            // Clear existing markers
-            map.eachLayer((layer) => { if (layer instanceof L.Marker) map.removeLayer(layer); });
+        async function fetchOpenChargeMapData() {
+            if (!OCM_API_KEY || OCM_API_KEY === "YOUR_FREE_API_KEY_HERE") {
+                updateStatus("⚠️ Insert your free OpenChargeMap API key to load live markers!");
+                return;
+            }
 
-            const chargers = getLocalData();
+            const center = map.getCenter();
+            updateStatus("📡 Querying OpenChargeMap POIs...");
 
-            chargers.forEach(charger => {
-                // Compute average star rating locally
-                const totalVotes = charger.ratings ? charger.ratings.length : 0;
+            // Queries Open Charge Map within 25km radius of map center
+            const url = `https://api.openchargemap.io/v3/poi/?output=json&latitude=${center.lat}&longitude=${center.lng}&distance=25&distanceunit=KM&maxresults=100`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'X-API-Key': OCM_API_KEY
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data && data.length > 0) {
+                        data.forEach(item => {
+                            const ocmId = `ocm_${item.ID}`;
+                            const address = item.AddressInfo;
+
+                            if (address && address.Latitude && address.Longitude) {
+                                const title = address.Title || item.OperatorInfo?.Title || "EV Charging Station";
+                                const power = item.Connections?.[0]?.PowerKW ? `${item.Connections[0].PowerKW}kW` : 'Standard';
+                                const desc = `${address.AddressLine1 || ''} (${power} EV Charger)`;
+
+                                ocmStationsStore.set(ocmId, {
+                                    id: ocmId,
+                                    name: title,
+                                    description: desc,
+                                    latitude: address.Latitude,
+                                    longitude: address.Longitude,
+                                    isOcm: true
+                                });
+                            }
+                        });
+
+                        updateStatus(`✅ Loaded ${ocmStationsStore.size} live EV stations`);
+                        renderAllMarkers();
+                    } else {
+                        updateStatus("ℹ️ No EV stations found in this specific radius.");
+                    }
+                } else {
+                    updateStatus("⚠️ API Error. Verify your OpenChargeMap Key.");
+                }
+            } catch (err) {
+                console.error("OpenChargeMap fetch error:", err);
+                updateStatus("❌ Network error fetching stations.");
+            }
+        }
+
+        function renderAllMarkers() {
+            markersGroup.clearLayers();
+
+            const customChargers = getCustomData();
+            const allRatings = getRatingsData();
+
+            const allStations = [...customChargers, ...Array.from(ocmStationsStore.values())];
+
+            allStations.forEach(charger => {
+                const ratingsList = allRatings[charger.id] || [];
+                const totalVotes = ratingsList.length;
                 let avg = "No ratings yet";
                 
                 if (totalVotes > 0) {
-                    const sum = charger.ratings.reduce((a, b) => a + b, 0);
+                    const sum = ratingsList.reduce((a, b) => a + b, 0);
                     avg = (sum / totalVotes).toFixed(1) + " ⭐";
                 }
 
+                const badge = charger.isOcm ? 
+                    `<span class="badge-ocm">OCM</span>` : 
+                    `<span class="badge-custom">Local</span>`;
+
                 const infoHtml = `
                     <div class="popup-box">
-                        <h3>${charger.name}</h3>
+                        <h3>${charger.name} ${badge}</h3>
                         <p><b>Rating:</b> ${avg} (${totalVotes} votes)</p>
-                        <label style="font-size:12px; font-weight:bold;">Description:</label>
-                        <textarea id="edit-desc-${charger.id}">${charger.description || ''}</textarea>
-                        <button class="btn-update" onclick="updateDescription(${charger.id})">Update Details</button>
+                        <p>${charger.description || ''}</p>
                         
                         <div class="rating-zone">
                             <label style="font-size:12px; font-weight:bold;">Submit Rating:</label>
                             <div class="stars-select">
-                                <span onclick="submitRating(${charger.id}, 1)">1★</span>
-                                <span onclick="submitRating(${charger.id}, 2)">2★</span>
-                                <span onclick="submitRating(${charger.id}, 3)">3★</span>
-                                <span onclick="submitRating(${charger.id}, 4)">4★</span>
-                                <span onclick="submitRating(${charger.id}, 5)">5★</span>
+                                <span onclick="submitRating('${charger.id}', 1)">1★</span>
+                                <span onclick="submitRating('${charger.id}', 2)">2★</span>
+                                <span onclick="submitRating('${charger.id}', 3)">3★</span>
+                                <span onclick="submitRating('${charger.id}', 4)">4★</span>
+                                <span onclick="submitRating('${charger.id}', 5)">5★</span>
                             </div>
                         </div>
                     </div>
                 `;
-                L.marker([charger.latitude, charger.longitude]).addTo(map).bindPopup(infoHtml);
+                
+                L.marker([charger.latitude, charger.longitude]).addTo(markersGroup).bindPopup(infoHtml);
             });
         }
 
         function saveNewCharger(lat, lng) {
             const name = document.getElementById('new-name').value;
             const description = document.getElementById('new-desc').value;
-            if(!name) return alert('Station Title required');
+            if (!name) return alert('Station Title required');
 
-            const chargers = getLocalData();
+            const chargers = getCustomData();
             const newCharger = {
-                id: Date.now(), // Generate a unique timestamp ID
+                id: 'custom_' + Date.now(),
                 name: name,
                 description: description,
                 latitude: lat,
                 longitude: lng,
-                ratings: []
+                isOcm: false
             };
 
             chargers.push(newCharger);
-            saveLocalData(chargers);
+            saveCustomData(chargers);
 
             map.closePopup();
-            loadMarkers();
-        }
-
-        function updateDescription(id) {
-            const newDescription = document.getElementById(`edit-desc-${id}`).value;
-            const chargers = getLocalData();
-            
-            const charger = chargers.find(c => c.id === id);
-            if (charger) {
-                charger.description = newDescription;
-                saveLocalData(chargers);
-                alert('Details updated!');
-                loadMarkers();
-            }
+            renderAllMarkers();
         }
 
         function submitRating(chargerId, ratingValue) {
-            const chargers = getLocalData();
+            const ratings = getRatingsData();
+            if (!ratings[chargerId]) ratings[chargerId] = [];
             
-            const charger = chargers.find(c => c.id === chargerId);
-            if (charger) {
-                if (!charger.ratings) charger.ratings = [];
-                charger.ratings.push(ratingValue);
-                saveLocalData(chargers);
-                alert('Rating logged!');
-                loadMarkers();
-            }
+            ratings[chargerId].push(ratingValue);
+            saveRatingsData(ratings);
+            alert('Rating logged!');
+            renderAllMarkers();
         }
     </script>
 </body>
